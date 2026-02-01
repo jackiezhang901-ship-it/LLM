@@ -1,0 +1,28 @@
+import dashscope
+from dashscope import Generation
+
+
+def call_qwen(
+    system_prompt: str,
+    user_prompt: str,
+    model: str = "qwen-plus",
+    temperature: float = 0.7
+) -> str:
+    """
+    调用 Qwen LLM
+    """
+    dashscope.api_key = "sk-009d522ce9a04bae99964e3ef120b29e"
+    response = Generation.call(
+        model=model,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=temperature,
+        result_format="message",
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(response)
+
+    return response.output.choices[0].message.content
