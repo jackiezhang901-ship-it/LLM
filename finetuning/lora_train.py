@@ -5,35 +5,42 @@ from transformers import (
     AutoModelForCausalLM,
     TrainingArguments,
     Trainer,
-    DataCollatorForLanguageModeling
+    DataCollatorForLanguageModeling,
+    BitsAndBytesConfig
 )
 from peft import LoraConfig, get_peft_model
 
 MODEL_NAME = "Qwen/Qwen2.5-1.5B-Instruct"
 MAX_LEN = 512
 
-# 1. load tokenizer
+# ========== 1. tokenizer ==========
 tokenizer = AutoTokenizer.from_pretrained(
     MODEL_NAME,
     trust_remote_code=True
 )
 tokenizer.pad_token = tokenizer.eos_token
 
-# 2. load 4bit model（QLoRA）
-model = AutoModelForCausalLM.from_pretrained(
-    MODEL_NAME,
+# ========== 2. QLoRA config（关键） ==========
+bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
-    device_map="auto",
-    torch_dtype=torch.float16,
     bnb_4bit_quant_type="nf4",
     bnb_4bit_use_double_quant=True,
-    bnb_4bit_compute_dtype=torch.float16
+    bnb_4bit_compute_dtype=torch.float16,
 )
 
+# ========== 3. load model（强制整卡 GPU） ==========
+model = AutoModelForCausalLM.from_pretrained(
+    MODEL_NAME,
+    quantization_config=bnb_config,
+    device_map={"": 0},        # 🔥 不要 auto
+    trust_remote_code=True
+)
+
+# 必须在 LoRA 前
 model.gradient_checkpointing_enable()
 model.enable_input_require_grads()
 
-# 3. LoRA 配置（4GB 安全）
+# ========== 4. LoRA ==========
 lora_config = LoraConfig(
     r=8,
     lora_alpha=16,
@@ -46,7 +53,10 @@ lora_config = LoraConfig(
 model = get_peft_model(model, lora_config)
 model.print_trainable_parameters()
 
-# 4. dataset handling
+# 🔍 验证：必须是 cuda
+print("model device:", next(model.parameters()).device)
+
+# ========== 5. dataset ==========
 def format_messages(example):
     text = ""
     for m in example["messages"]:
@@ -69,9 +79,12 @@ def tokenize(example):
         padding=False
     )
 
-dataset = dataset.map(tokenize, remove_columns=dataset["train"].column_names)
+dataset = dataset.map(
+    tokenize,
+    remove_columns=dataset["train"].column_names
+)
 
-# 5. training parameter
+# ========== 6. training args ==========
 training_args = TrainingArguments(
     output_dir="./lora-out",
     per_device_train_batch_size=1,
@@ -86,7 +99,8 @@ training_args = TrainingArguments(
     gradient_checkpointing=True,
     lr_scheduler_type="cosine",
     warmup_ratio=0.03,
-    max_grad_norm=0.3
+    max_grad_norm=0.3,
+    dataloader_pin_memory=True
 )
 
 trainer = Trainer(
@@ -99,6 +113,5 @@ trainer = Trainer(
     )
 )
 
-# 6. start to train and output
 trainer.train()
-trainer.save_model("./lora-o")
+trainer.save_model("./lora-out")
