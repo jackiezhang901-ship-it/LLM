@@ -1,6 +1,5 @@
 from typing import TypedDict, List
 from langgraph.graph import StateGraph, END
-import dashscope
 from qwen_llm import call_qwen
 
 # ======================

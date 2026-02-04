@@ -68,7 +68,7 @@ def format_messages(example):
             text += f"<|assistant|>\n{m['content']}\n"
     return {"text": text}
 
-dataset = load_dataset("json", data_files="train.json")
+dataset = load_dataset("json", data_files="train_chatml_runfast.json")
 dataset = dataset.map(format_messages)
 
 def tokenize(example):
